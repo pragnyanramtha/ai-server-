@@ -122,29 +122,17 @@ export default async function handler(req) {
   const headers = {
     "Content-Type": "application/json",
   };
-  
+
   const apiKey = process.env.HACK_CLUB_AI_API_KEY;
   if (apiKey) {
     headers["Authorization"] = `Bearer ${apiKey}`;
   }
-  
+
   const upstreamRes = await fetch(upstreamUrl, {
     method: "POST",
     headers,
     body: JSON.stringify(payload),
   });
-
-  if (!upstreamRes.ok) {
-    const responseHeaders = new Headers(upstreamRes.headers);
-    for (const [k, v] of Object.entries(corsHeaders())) {
-      responseHeaders.set(k, v);
-    }
-
-    return new Response(upstreamRes.body, {
-      status: upstreamRes.status,
-      headers: responseHeaders,
-    });
-  }
 
   if (body?.stream) {
     const responseHeaders = new Headers({
@@ -157,9 +145,11 @@ export default async function handler(req) {
     }
 
     const msgId = `msg_${crypto.randomUUID()}`;
-    const transformStream = new TransformStream({
+    const encoder = new TextEncoder();
+
+    const stream = new ReadableStream({
       async start(controller) {
-        controller.enqueue(new TextEncoder().encode(`event: message_start\ndata: ${JSON.stringify({
+        controller.enqueue(encoder.encode(`event: message_start\ndata: ${JSON.stringify({
           type: "message_start",
           message: {
             id: msgId,
@@ -172,56 +162,83 @@ export default async function handler(req) {
           }
         })}\n\n`));
 
-        controller.enqueue(new TextEncoder().encode(`event: content_block_start\ndata: ${JSON.stringify({
+        controller.enqueue(encoder.encode(`event: content_block_start\ndata: ${JSON.stringify({
           type: "content_block_start",
           index: 0,
           content_block: { type: "text", text: "" }
         })}\n\n`));
       },
-      async transform(chunk, controller) {
-        const text = new TextDecoder().decode(chunk);
-        const lines = text.split("\n");
-        
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const data = line.slice(6);
-          if (data === "[DONE]") continue;
+      async pull(controller) {
+        const reader = upstreamRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
 
-          try {
-            const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta;
-            if (!delta?.content) continue;
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-            controller.enqueue(new TextEncoder().encode(`event: content_block_delta\ndata: ${JSON.stringify({
-              type: "content_block_delta",
-              index: 0,
-              delta: { type: "text_delta", text: delta.content }
-            })}\n\n`));
-          } catch {
-            // Skip invalid JSON
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              const data = line.slice(6);
+              if (data === "[DONE]") continue;
+
+              try {
+                const parsed = JSON.parse(data);
+                const delta = parsed.choices?.[0]?.delta;
+                if (!delta?.content) continue;
+
+                controller.enqueue(encoder.encode(`event: content_block_delta\ndata: ${JSON.stringify({
+                  type: "content_block_delta",
+                  index: 0,
+                  delta: { type: "text_delta", text: delta.content }
+                })}\n\n`));
+              } catch {
+                // Skip invalid JSON
+              }
+            }
           }
+
+          controller.enqueue(encoder.encode(`event: content_block_stop\ndata: ${JSON.stringify({
+            type: "content_block_stop",
+            index: 0
+          })}\n\n`));
+
+          controller.enqueue(encoder.encode(`event: message_delta\ndata: ${JSON.stringify({
+            type: "message_delta",
+            delta: { stop_reason: "end_turn" },
+            usage: { output_tokens: 0 }
+          })}\n\n`));
+
+          controller.enqueue(encoder.encode(`event: message_stop\ndata: ${JSON.stringify({
+            type: "message_stop"
+          })}\n\n`));
+
+          controller.close();
+        } catch (error) {
+          controller.error(error);
         }
-      },
-      async flush(controller) {
-        controller.enqueue(new TextEncoder().encode(`event: content_block_stop\ndata: ${JSON.stringify({
-          type: "content_block_stop",
-          index: 0
-        })}\n\n`));
-
-        controller.enqueue(new TextEncoder().encode(`event: message_delta\ndata: ${JSON.stringify({
-          type: "message_delta",
-          delta: { stop_reason: "end_turn" },
-          usage: { output_tokens: 0 }
-        })}\n\n`));
-
-        controller.enqueue(new TextEncoder().encode(`event: message_stop\ndata: ${JSON.stringify({
-          type: "message_stop"
-        })}\n\n`));
       }
     });
 
-    return new Response(upstreamRes.body.pipeThrough(transformStream), {
+    return new Response(stream, {
       status: 200,
+      headers: responseHeaders,
+    });
+  }
+
+  if (!upstreamRes.ok) {
+    const responseHeaders = new Headers(upstreamRes.headers);
+    for (const [k, v] of Object.entries(corsHeaders())) {
+      responseHeaders.set(k, v);
+    }
+
+    return new Response(upstreamRes.body, {
+      status: upstreamRes.status,
       headers: responseHeaders,
     });
   }
