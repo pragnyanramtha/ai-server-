@@ -146,6 +146,86 @@ export default async function handler(req) {
     });
   }
 
+  if (body?.stream) {
+    const responseHeaders = new Headers({
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+    });
+    for (const [k, v] of Object.entries(corsHeaders())) {
+      responseHeaders.set(k, v);
+    }
+
+    const msgId = `msg_${crypto.randomUUID()}`;
+    const transformStream = new TransformStream({
+      async start(controller) {
+        controller.enqueue(new TextEncoder().encode(`event: message_start\ndata: ${JSON.stringify({
+          type: "message_start",
+          message: {
+            id: msgId,
+            type: "message",
+            role: "assistant",
+            model: "z-ai/glm-5.1",
+            content: [],
+            stop_reason: null,
+            usage: { input_tokens: 0, output_tokens: 0 },
+          }
+        })}\n\n`));
+
+        controller.enqueue(new TextEncoder().encode(`event: content_block_start\ndata: ${JSON.stringify({
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "text", text: "" }
+        })}\n\n`));
+      },
+      async transform(chunk, controller) {
+        const text = new TextDecoder().decode(chunk);
+        const lines = text.split("\n");
+        
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6);
+          if (data === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta;
+            if (!delta?.content) continue;
+
+            controller.enqueue(new TextEncoder().encode(`event: content_block_delta\ndata: ${JSON.stringify({
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "text_delta", text: delta.content }
+            })}\n\n`));
+          } catch {
+            // Skip invalid JSON
+          }
+        }
+      },
+      async flush(controller) {
+        controller.enqueue(new TextEncoder().encode(`event: content_block_stop\ndata: ${JSON.stringify({
+          type: "content_block_stop",
+          index: 0
+        })}\n\n`));
+
+        controller.enqueue(new TextEncoder().encode(`event: message_delta\ndata: ${JSON.stringify({
+          type: "message_delta",
+          delta: { stop_reason: "end_turn" },
+          usage: { output_tokens: 0 }
+        })}\n\n`));
+
+        controller.enqueue(new TextEncoder().encode(`event: message_stop\ndata: ${JSON.stringify({
+          type: "message_stop"
+        })}\n\n`));
+      }
+    });
+
+    return new Response(upstreamRes.body.pipeThrough(transformStream), {
+      status: 200,
+      headers: responseHeaders,
+    });
+  }
+
   let upstreamBody;
   try {
     upstreamBody = await upstreamRes.json();
