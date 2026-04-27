@@ -70,6 +70,7 @@ function toAnthropicContent(content) {
 }
 
 function finishReasonToStopReason(reason) {
+  if (reason === "stop") return "end_turn";
   if (reason === "length") return "max_tokens";
   if (reason === "tool_calls") return "tool_use";
   return "end_turn";
@@ -158,7 +159,7 @@ export default async function handler(req) {
   }
 
   return new Response(JSON.stringify(openAIToAnthropic(upstreamBody, body?.model)), {
-    status: upstreamRes.status,
+    status: 200,
     headers: { "Content-Type": "application/json", ...corsHeaders() },
   });
 }

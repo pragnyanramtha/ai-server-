@@ -76,6 +76,7 @@ function toAnthropicContent(content) {
 }
 
 function finishReasonToStopReason(reason) {
+  if (reason === "stop") return "end_turn";
   if (reason === "length") return "max_tokens";
   if (reason === "tool_calls") return "tool_use";
   return "end_turn";
@@ -154,7 +155,7 @@ export default {
       } catch {
         return jsonResponse({ error: "Upstream returned invalid JSON" }, 502);
       }
-      return jsonResponse(openAIToAnthropic(upstreamBody, body?.model), upstreamRes.status);
+      return jsonResponse(openAIToAnthropic(upstreamBody, body?.model), 200);
     }
 
     const responseHeaders = new Headers(upstreamRes.headers);
