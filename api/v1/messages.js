@@ -1,6 +1,10 @@
 const DEFAULT_MODEL = "z-ai/glm-5.1";
 const DEFAULT_UPSTREAM = "https://ai.hackclub.com/proxy/v1/chat/completions";
 
+export const config = {
+  runtime: "edge",
+};
+
 function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
@@ -8,16 +12,6 @@ function corsHeaders() {
     "Access-Control-Allow-Headers":
       "Content-Type, Authorization, x-api-key, anthropic-version",
   };
-}
-
-function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      ...corsHeaders(),
-    },
-  });
 }
 
 function toOpenAIContent(content) {
@@ -101,63 +95,48 @@ function openAIToAnthropic(body, requestedModel) {
   };
 }
 
-export default {
-  async fetch(request, env) {
-    const { pathname } = new URL(request.url);
+export default async function handler(req) {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders() });
+  }
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders() });
-    }
-
-    const isOpenAIEndpoint = pathname === "/v1/chat/completions";
-    const isAnthropicEndpoint = pathname === "/v1/messages";
-
-    if (!isOpenAIEndpoint && !isAnthropicEndpoint) {
-      return jsonResponse({ error: "Not found" }, 404);
-    }
-
-    if (request.method !== "POST") {
-      return jsonResponse({ error: "Method not allowed" }, 405);
-    }
-
-    if (!env.HACK_CLUB_AI_API_KEY) {
-      return jsonResponse({ error: "Server misconfigured" }, 500);
-    }
-
-    let body;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonResponse({ error: "Invalid JSON body" }, 400);
-    }
-
-    const payload = isAnthropicEndpoint
-      ? anthropicToOpenAI(body)
-      : {
-          ...body,
-          model: body?.model || DEFAULT_MODEL,
-        };
-
-    const upstreamUrl = env.HACKCLUB_BASE_URL || DEFAULT_UPSTREAM;
-    const upstreamRes = await fetch(upstreamUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.HACK_CLUB_AI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json", ...corsHeaders() },
     });
+  }
 
-    if (isAnthropicEndpoint && upstreamRes.ok) {
-      let upstreamBody;
-      try {
-        upstreamBody = await upstreamRes.json();
-      } catch {
-        return jsonResponse({ error: "Upstream returned invalid JSON" }, 502);
-      }
-      return jsonResponse(openAIToAnthropic(upstreamBody, body?.model), 200);
-    }
+  const apiKey = process.env.HACK_CLUB_AI_API_KEY;
+  if (!apiKey) {
+    return new Response(JSON.stringify({ error: "Server misconfigured" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json", ...corsHeaders() },
+    });
+  }
 
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json", ...corsHeaders() },
+    });
+  }
+
+  const payload = anthropicToOpenAI(body);
+  const upstreamUrl = process.env.HACKCLUB_BASE_URL || DEFAULT_UPSTREAM;
+  const upstreamRes = await fetch(upstreamUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!upstreamRes.ok) {
     const responseHeaders = new Headers(upstreamRes.headers);
     for (const [k, v] of Object.entries(corsHeaders())) {
       responseHeaders.set(k, v);
@@ -167,5 +146,20 @@ export default {
       status: upstreamRes.status,
       headers: responseHeaders,
     });
-  },
-};
+  }
+
+  let upstreamBody;
+  try {
+    upstreamBody = await upstreamRes.json();
+  } catch {
+    return new Response(JSON.stringify({ error: "Upstream returned invalid JSON" }), {
+      status: 502,
+      headers: { "Content-Type": "application/json", ...corsHeaders() },
+    });
+  }
+
+  return new Response(JSON.stringify(openAIToAnthropic(upstreamBody, body?.model)), {
+    status: 200,
+    headers: { "Content-Type": "application/json", ...corsHeaders() },
+  });
+}

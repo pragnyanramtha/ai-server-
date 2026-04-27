@@ -1,6 +1,6 @@
 # AI Proxy (Vercel + Cloudflare Workers)
 
-This project exposes a public chat completions endpoint that proxies requests to Hack Club AI.
+This project exposes public OpenAI- and Anthropic-compatible endpoints that proxy requests to Hack Club AI.
 
 - Upstream endpoint: `https://ai.hackclub.com/proxy/v1/chat/completions`
 - Upstream auth: `Authorization: Bearer <HACK_CLUB_AI_API_KEY>` (server-side only)
@@ -9,8 +9,12 @@ This project exposes a public chat completions endpoint that proxies requests to
 
 ## Endpoints
 
-- Vercel: `POST /api/v1/chat/completions`
-- Cloudflare Worker: `POST /v1/chat/completions`
+- OpenAI compatible
+  - Vercel: `POST /api/v1/chat/completions`
+  - Cloudflare Worker: `POST /v1/chat/completions`
+- Anthropic compatible
+  - Vercel: `POST /api/v1/messages`
+  - Cloudflare Worker: `POST /v1/messages`
 
 ## Request format
 
@@ -32,6 +36,22 @@ If `model` is omitted, the proxy sends:
 {
 	"model": "z-ai/glm-5.1"
 }
+```
+
+### Anthropic-compatible requests
+
+Send an Anthropic-compatible `/v1/messages` payload:
+
+```bash
+curl https://<your-domain>/api/v1/messages \
+	-H "Content-Type: application/json" \
+	-H "anthropic-version: 2023-06-01" \
+	-d '{
+		"max_tokens": 256,
+		"messages": [
+			{"role": "user", "content": "Tell me a joke."}
+		]
+	}'
 ```
 
 ## Environment variables
