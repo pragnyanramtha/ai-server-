@@ -44,7 +44,7 @@ function anthropicToOpenAI(body) {
   }
 
   return {
-    model: body?.model || DEFAULT_MODEL,
+    model: "z-ai/glm-5.1",
     messages,
     max_tokens: body?.max_tokens,
     temperature: body?.temperature,
@@ -84,7 +84,7 @@ function openAIToAnthropic(body, requestedModel) {
     id: body?.id || `msg_${crypto.randomUUID()}`,
     type: "message",
     role: "assistant",
-    model: body?.model || requestedModel || DEFAULT_MODEL,
+    model: "z-ai/glm-5.1",
     content: [{ type: "text", text }],
     stop_reason: finishReasonToStopReason(firstChoice?.finish_reason),
     stop_sequence: null,

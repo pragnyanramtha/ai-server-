@@ -46,7 +46,7 @@ export default async function handler(req) {
 
   const payload = {
     ...body,
-    model: body?.model || DEFAULT_MODEL,
+    model: "z-ai/glm-5.1",
   };
 
   const upstreamUrl = process.env.HACKCLUB_BASE_URL || DEFAULT_UPSTREAM;
