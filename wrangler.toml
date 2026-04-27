@@ -1,0 +1,6 @@
+name = "ai-server-proxy"
+main = "src/worker.js"
+compatibility_date = "2026-04-27"
+
+[vars]
+HACKCLUB_BASE_URL = "https://ai.hackclub.com/proxy/v1/chat/completions"
