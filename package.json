@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
+    "start": "wrangler dev",
     "dev:cf": "wrangler dev",
     "deploy:cf": "wrangler deploy"
   },
