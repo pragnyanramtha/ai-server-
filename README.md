@@ -61,6 +61,25 @@ curl https://<your-domain>/api/v1/messages \
 
 Use `.env.example` as reference.
 
+## Run locally
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Start the server:
+
+```bash
+npm start
+```
+
+This starts the Cloudflare Worker locally (default `http://localhost:8787`) with both:
+
+- `POST /v1/chat/completions` (OpenAI-compatible)
+- `POST /v1/messages` (Anthropic-compatible)
+
 ## Deploy on Vercel
 
 1. Import this repo in Vercel.
