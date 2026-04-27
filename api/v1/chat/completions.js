@@ -26,14 +26,6 @@ export default async function handler(req) {
     });
   }
 
-  const apiKey = process.env.HACK_CLUB_AI_API_KEY;
-  if (!apiKey) {
-    return new Response(JSON.stringify({ error: "Server misconfigured" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json", ...corsHeaders() },
-    });
-  }
-
   let body;
   try {
     body = await req.json();
@@ -50,12 +42,18 @@ export default async function handler(req) {
   };
 
   const upstreamUrl = process.env.HACKCLUB_BASE_URL || DEFAULT_UPSTREAM;
+  const headers = {
+    "Content-Type": "application/json",
+  };
+  
+  const apiKey = process.env.HACK_CLUB_AI_API_KEY;
+  if (apiKey) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+  }
+  
   const upstreamRes = await fetch(upstreamUrl, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(payload),
   });
 
